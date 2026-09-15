@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: basarai-staging
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      # Render's edge router forwards to whatever port this is set to.
+      # Our container always binds Next.js to FRONTEND_PORT (default 3000,
+      # see scripts/container-entrypoint.sh) regardless of this var's name --
+      # this only tells Render's router where to send traffic. No code change.
+      - key: PORT
+        value: 3000
+
+      # Baked into the Next.js build as Docker build ARGs (Render auto-
+      # converts envVars to --build-arg for Dockerfile services). Both are
+      # intentionally public (NEXT_PUBLIC_*, "publishable" key by design),
+      # safe to commit -- they ship in the browser bundle either way.
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        value: https://pbfbarzscosatbwaaucv.supabase.co
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_k340MhZCfnx8nS3aOuv3Tw_JCaBsGXu
+      # Client-side fetch base path (frontend/lib/api.ts) -- proxied by
+      # next.config.js rewrites to the internal FastAPI backend. Missing
+      # this caused `/undefined/me` 404s on first deploy (fixed here).
+      - key: NEXT_PUBLIC_API_URL
+        value: /api
+      # Canonical public app URL, used to build auth-redirect targets
+      # (signup emailRedirectTo, /auth/confirm's redirect). Needed as an
+      # explicit value because request.nextUrl's derived origin is not
+      # trustworthy behind Render's proxy: the standalone Next.js server
+      # (HOSTNAME=0.0.0.0, PORT=3000 -- Docker bind config, not a public
+      # host) can resolve its own perceived origin to http://0.0.0.0:3000,
+      # which previously leaked into the /auth/confirm redirect Location.
+      - key: NEXT_PUBLIC_SITE_URL
+        value: https://basarai-staging.onrender.com
+
+      # Runtime-only backend config (FastAPI, via backend/app/core/config.py).
+      - key: SUPABASE_URL
+        value: https://pbfbarzscosatbwaaucv.supabase.co
+      - key: STORAGE_BUCKET
+        value: brand-assets
+      - key: CORS_ORIGINS
+        value: https://basarai-staging.onrender.com
+
+      # Real secrets/PII -- sync:false means Render prompts for the value at
+      # Blueprint creation time and stores it encrypted; neither is ever
+      # written to this file.
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      # Comma-separated admin allow-list (backend/app/core/auth.py). Kept
+      # out of git since it's a real person's email, not a secret exactly
+      # but not something to publish either.
+      - key: ADMIN_EMAILS
+        sync: false
