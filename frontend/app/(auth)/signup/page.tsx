@@ -34,7 +34,12 @@ export default function SignUpPage() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/confirm`,
+        // Use the explicit canonical site URL rather than
+        // window.location.origin -- this is reliable in the browser too,
+        // but keeping one canonical source (also used server-side in
+        // app/auth/confirm/route.ts) avoids two different mechanisms for
+        // the same "app's public URL" concept.
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL}/auth/confirm`,
       },
     })
 
