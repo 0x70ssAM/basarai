@@ -58,6 +58,13 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD python3 -c "import os,urllib.request,sys;bp=os.environ.get('BACKEND_PORT','8000');fp=os.environ.get('FRONTEND_PORT','3000');r1=urllib.request.urlopen(f'http://localhost:{bp}/health');r2=urllib.request.urlopen(f'http://localhost:{fp}');sys.exit(0 if r1.status==200 and r2.status==200 else 1)"
 
+# next/image optimization (used for the small brand-avatar icon) writes a
+# persistent disk cache under .next/cache; the tree copied in above is
+# root-owned, so appuser hit EACCES on every request. Requests still
+# succeeded (Next falls back to serving without persisting the cache), but
+# owning it correctly lets the cache actually work.
+RUN mkdir -p /app/frontend/.next/cache && chown -R appuser:appuser /app/frontend/.next
+
 USER appuser
 
 EXPOSE 3000

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Eye, EyeOff, ImagePlus, KeyRound, Palette } from 'lucide-react'
@@ -25,6 +25,30 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // Supabase's default "Confirm signup" email template (customizing it
+  // requires a paid plan or custom SMTP, neither configured here) links to
+  // GoTrue's implicit-flow verify endpoint, which redirects back with the
+  // session as a URL fragment (#access_token=...) rather than a token_hash
+  // query param our /auth/confirm route expects. Fragments never reach the
+  // server, so that route can't see them and falls back to here -- pick the
+  // fragment up client-side and finish establishing the session.
+  useEffect(() => {
+    if (!window.location.hash.includes('access_token')) return
+
+    const params = new URLSearchParams(window.location.hash.slice(1))
+    const access_token = params.get('access_token')
+    const refresh_token = params.get('refresh_token')
+    if (!access_token || !refresh_token) return
+
+    const supabase = createClient()
+    supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
+      if (!error) {
+        router.replace('/brands')
+        router.refresh()
+      }
+    })
+  }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
