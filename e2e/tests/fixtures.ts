@@ -73,6 +73,41 @@ export async function generateSignupConfirmationLink(email: string, password: st
   return actionLink
 }
 
+/**
+ * Logs a page in as an EXISTING user via a generated magic link, without
+ * ever touching or needing that user's password. Used only to test backend
+ * admin authorization against the real configured admin account
+ * (ADMIN_TEST_EMAIL) as that real account, which we don't and shouldn't
+ * have the password for. Establishes a real cookie session (required --
+ * middleware redirects any request without a valid session cookie before
+ * it ever reaches the backend, regardless of an Authorization header).
+ */
+export async function loginAsExistingUserViaMagicLink(page: Page, email: string) {
+  const supabaseUrl = process.env.SUPABASE_URL
+  const secretKey = process.env.SUPABASE_SECRET_KEY
+  if (!supabaseUrl || !secretKey) {
+    throw new Error('SUPABASE_URL / SUPABASE_SECRET_KEY must be set (see e2e/.env.example)')
+  }
+  const res = await fetch(`${supabaseUrl}/auth/v1/admin/generate_link`, {
+    method: 'POST',
+    headers: {
+      apikey: secretKey,
+      Authorization: `Bearer ${secretKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ type: 'magiclink', email }),
+  })
+  if (!res.ok) {
+    throw new Error(`generate_link (magiclink) failed: ${res.status} ${await res.text()}`)
+  }
+  const body = await res.json()
+  const actionLink: string = body.properties?.action_link ?? body.action_link
+  if (!actionLink) throw new Error('generate_link response had no action_link')
+
+  await page.goto(actionLink)
+  await page.waitForLoadState('networkidle')
+}
+
 /** Deletes a test user by email via the Admin API, for cleanup. */
 export async function deleteTestUser(userId: string) {
   const supabaseUrl = process.env.SUPABASE_URL
