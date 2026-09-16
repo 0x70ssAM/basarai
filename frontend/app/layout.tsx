@@ -41,7 +41,20 @@ export default function RootLayout({
       className={`${display.variable} ${sans.variable} ${geistMono.variable}`}
     >
       <body className="font-sans antialiased">
-        <ClerkProvider>
+        {/*
+          Explicit routing props, not env vars: without these, Clerk
+          doesn't know this app has its own custom /login and /signup
+          pages, and clerkMiddleware's auth.protect() falls back to
+          redirecting unauthenticated requests to Clerk's own hosted
+          Account Portal (https://<instance>.accounts.dev/sign-in)
+          instead of our UI -- confirmed live on this deployment.
+        */}
+        <ClerkProvider
+          signInUrl="/login"
+          signUpUrl="/signup"
+          signInFallbackRedirectUrl="/brands"
+          signUpFallbackRedirectUrl="/brands"
+        >
           {children}
           <Toaster />
         </ClerkProvider>

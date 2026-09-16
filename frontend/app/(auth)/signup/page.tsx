@@ -157,10 +157,10 @@ export default function SignUpPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={15}
+                  minLength={8}
                   autoComplete="new-password"
                 />
-                <p className="text-[12px] text-muted-foreground">At least 15 characters.</p>
+                <p className="text-[12px] text-muted-foreground">At least 8 characters.</p>
               </div>
               <div id="clerk-captcha" />
             </CardContent>

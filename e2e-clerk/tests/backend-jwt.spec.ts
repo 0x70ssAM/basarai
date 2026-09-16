@@ -53,6 +53,25 @@ test.describe('backend JWT verification (Clerk)', () => {
     expect(res.headers()['location']).toContain('/login')
   })
 
+  // Regression: a crafted, JWT-shaped-but-invalid Authorization header
+  // (3 dot-separated segments) made clerkMiddleware's own auth() throw an
+  // unhandled exception, surfacing as a bare Next.js 500 instead of a
+  // clean redirect -- found live via direct curl during the release-gate
+  // pass, confirmed no stack trace/secret was exposed (Next's generic
+  // _error page), fixed with a try/catch in middleware.ts that treats any
+  // unexpected auth-resolution error as "not signed in". Uses `request`
+  // (no browser session) since the crash was independent of login state.
+  test('a crafted JWT-shaped malformed token never crashes middleware with a 500', async ({ request }) => {
+    for (const token of ['aaaa.bbbb.cccc', 'eyJhbGciOiJIUzI1NiJ9.eyJmb28iOiJiYXIifQ.invalid']) {
+      const res = await request.get('/api/me', {
+        headers: { Authorization: `Bearer ${token}` },
+        maxRedirects: 0,
+      })
+      expect(res.status(), `token: ${token}`).not.toBe(500)
+      expect([301, 302, 303, 307, 308]).toContain(res.status())
+    }
+  })
+
   // The scenario backend/tests/test_auth.py actually covers at the unit
   // level (malformed token rejected with 401, not 500/503) requires
   // reaching FastAPI directly, bypassing the Next.js middleware/rewrite
