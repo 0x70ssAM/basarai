@@ -55,3 +55,52 @@ services:
       # but not something to publish either.
       - key: ADMIN_EMAILS
         sync: false
+
+  # Isolated Clerk-auth staging service (feature/clerk-auth branch only).
+  # Entirely separate from basarai-staging above: own Render service, own
+  # Supabase project (the existing staging DB has real rows and the Clerk
+  # migration's guard refuses to run against a non-empty profiles/brands
+  # table), own Clerk application instance keys. Values below are
+  # provisioned out-of-band (Render dashboard/API) and intentionally left
+  # sync:false here -- see docs/clerk-migration-plan.md for the full
+  # provisioning record.
+  - type: web
+    name: basarai-clerk-staging
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 3000
+
+      # Build ARGs (Docker build args, baked into the JS bundle).
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
+        sync: false
+      - key: NEXT_PUBLIC_API_URL
+        value: /api
+      - key: NEXT_PUBLIC_SITE_URL
+        sync: false
+
+      # Runtime backend config.
+      - key: SUPABASE_URL
+        sync: false
+      - key: STORAGE_BUCKET
+        value: brand-assets
+      - key: CORS_ORIGINS
+        sync: false
+      - key: CLERK_ISSUER
+        sync: false
+      - key: CLERK_AUTHORIZED_PARTIES
+        sync: false
+
+      # Secrets/PII -- never written to this file.
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
