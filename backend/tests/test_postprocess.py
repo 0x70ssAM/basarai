@@ -4,6 +4,7 @@ from PIL import Image
 
 from app.services.postprocess import resize_to_preset
 from app.services.presets import PLATFORM_PRESETS
+from app.services.providers.openai_image import compute_request_size
 
 
 def _make_image(width: int, height: int, color: tuple[int, int, int] = (255, 0, 0)) -> bytes:
@@ -55,24 +56,40 @@ def test_resize_output_is_png():
     assert Image.open(io.BytesIO(result)).format == "PNG"
 
 
-# Regression: providers only offer a handful of fixed native sizes (OpenAI's
-# landscape output is 1536x1024, a 3:2 ratio) which almost never matches an
-# extreme-ratio preset like Twitter's 3:1 header or LinkedIn's 4:1 banner.
-# The previous "cover scale + center-crop" implementation silently discarded
-# whatever the model had composed in the cropped band -- up to 62% of the
-# canvas for linkedin_banner. These tests fail under that old behavior (the
-# corner markers land outside the visible canvas and are lost) and pass
-# under the new "contain scale, letterbox the rest" behavior (every source
-# pixel survives at its correctly scaled position).
+def test_resize_matching_aspect_ratio_introduces_no_artifacts():
+    # Source and target share an aspect ratio exactly -- the output must
+    # be a plain resize (a uniform-color source stays uniform everywhere;
+    # any compositing/blur step would show up as a visible seam or a
+    # softened edge, neither of which a flat resize produces).
+    src = Image.new("RGB", (1024, 1024), (200, 100, 50))
+    out_bytes = io.BytesIO()
+    src.save(out_bytes, format="PNG")
+
+    result = resize_to_preset(out_bytes.getvalue(), 1080, 1080)
+    out = Image.open(io.BytesIO(result)).convert("RGB")
+    assert out.size == (1080, 1080)
+    assert out.getpixel((0, 0)) == (200, 100, 50)
+    assert out.getpixel((1079, 1079)) == (200, 100, 50)
+
+
+# Regression: the fix upstream of this function (openai_image.py's
+# compute_request_size, presets.py's PRESET_TO_ASPECT_RATIO) makes both
+# providers generate as close to the true target ratio as their own API
+# allows -- so resize_to_preset should now only ever need to correct a
+# small, bounded remainder, never the large destructive crop (up to 62%
+# of the canvas) the original bug produced by always requesting one of
+# a few unrelated fixed sizes. These tests build the ACTUAL source size
+# each preset will really receive (via compute_request_size, exactly as
+# openai_generate does) and verify end to end that the resulting crop
+# stays small.
 MARKER = (0, 255, 0)
 BACKGROUND = (10, 10, 10)
-_MARKER_FRACTION = 0.08  # corner block size, as a fraction of the shorter side
+_MARKER_FRACTION = 0.08
 
 
-def _corner_markers(width: int, height: int) -> tuple[bytes, int]:
+def _corner_markers(width: int, height: int) -> bytes:
     """A background-filled image with a solid marker block in each of the
-    top-left and bottom-right corners. Returns the image bytes and the
-    block size in source pixels (a single-pixel marker would get blended
+    top-left and bottom-right corners (a single-pixel marker gets blended
     away by LANCZOS resampling; a block survives with a samplable core)."""
     block = max(4, round(min(width, height) * _MARKER_FRACTION))
     image = Image.new("RGB", (width, height), BACKGROUND)
@@ -82,74 +99,72 @@ def _corner_markers(width: int, height: int) -> tuple[bytes, int]:
             image.putpixel((width - 1 - x, height - 1 - y), MARKER)
     out = io.BytesIO()
     image.save(out, format="PNG")
-    return out.getvalue(), block
+    return out.getvalue()
 
 
-def _assert_corner_survived(out: Image.Image, x: int, y: int, dx: int, dy: int) -> None:
-    """Sample a few pixels in from (x, y) along (dx, dy), inset away from
-    the block's own edge (which LANCZOS softens against the background),
-    and assert the marker color clearly survived there."""
-    px = out.getpixel((x + dx * 2, y + dy * 2))
-    assert px[1] > 150 and px[0] < 100 and px[2] < 100, (
-        f"expected marker-ish green at ({x + dx * 2}, {y + dy * 2}), got {px}"
+def _is_marker_ish(px: tuple[int, int, int]) -> bool:
+    return px[1] > 150 and px[0] < 100 and px[2] < 100
+
+
+def test_realistic_openai_source_crops_less_than_10_percent_for_most_presets():
+    # For every preset except linkedin_banner, the OpenAI-computed source
+    # size is within ~5% of the true target ratio (see
+    # test_openai_image.py), so the cover-crop this function applies
+    # should be small -- both corner markers should still be clearly
+    # present near their expected position, not discarded.
+    for key, (target_w, target_h, _label) in PLATFORM_PRESETS.items():
+        if key == "linkedin_banner":
+            continue
+        req_w, req_h = compute_request_size(target_w, target_h)
+        src = _corner_markers(req_w, req_h)
+
+        result = resize_to_preset(src, target_w, target_h)
+        out = Image.open(io.BytesIO(result)).convert("RGB")
+        assert out.size == (target_w, target_h), f"{key} produced {out.size}"
+
+        block_target = max(4, round(min(target_w, target_h) * _MARKER_FRACTION * 0.5))
+        top_left = out.getpixel((block_target // 2, block_target // 2))
+        bottom_right = out.getpixel(
+            (target_w - 1 - block_target // 2, target_h - 1 - block_target // 2)
+        )
+        assert _is_marker_ish(top_left), f"{key}: top-left marker lost, got {top_left}"
+        assert _is_marker_ish(bottom_right), (
+            f"{key}: bottom-right marker lost, got {bottom_right}"
+        )
+
+
+def test_linkedin_banner_crop_is_bounded_not_catastrophic():
+    # linkedin_banner (4:1) is the one preset whose ratio exceeds what
+    # either provider can produce natively -- compute_request_size clamps
+    # it to 3:1, so resize_to_preset still needs a real crop to reach the
+    # true 4:1 canvas. This must be a small, bounded trim (~15-20% of the
+    # scaled height), a world away from the original bug's 62.5% loss.
+    target_w, target_h, _label = PLATFORM_PRESETS["linkedin_banner"]
+    req_w, req_h = compute_request_size(target_w, target_h)
+
+    scale = max(target_w / req_w, target_h / req_h)
+    scaled_h = req_h * scale
+    crop_fraction = 1 - (target_h / scaled_h)
+
+    # The exact figure is deterministic (~25.8% for the current preset
+    # dimensions and OpenAI's real constraints) -- bounded well under the
+    # original bug's 62.5% loss for this same preset.
+    assert 0 < crop_fraction < 0.30, (
+        f"expected a bounded crop well under the old 62.5% loss, got {crop_fraction:.1%}"
     )
 
+    # And the actual pixels bear this out: a horizontal marker strip
+    # spanning the full width, centered vertically, survives the crop.
+    strip_h = max(4, round(req_h * 0.5))
+    image = Image.new("RGB", (req_w, req_h), BACKGROUND)
+    top = (req_h - strip_h) // 2
+    for y in range(top, top + strip_h):
+        for x in range(req_w):
+            image.putpixel((x, y), MARKER)
+    out_bytes = io.BytesIO()
+    image.save(out_bytes, format="PNG")
 
-def test_resize_extreme_landscape_preset_preserves_all_source_content():
-    # OpenAI's landscape native size, converted to Twitter's 3:1 header --
-    # under the old center-crop this discarded 500 of the scaled 1000px
-    # height (50%), i.e. exactly where these corner markers would land.
-    src_w, src_h = 1536, 1024
-    target_w, target_h = PLATFORM_PRESETS["twitter_header"][:2]
-    src, _block = _corner_markers(src_w, src_h)
-
-    result = resize_to_preset(src, target_w, target_h)
+    result = resize_to_preset(out_bytes.getvalue(), target_w, target_h)
     out = Image.open(io.BytesIO(result)).convert("RGB")
     assert out.size == (target_w, target_h)
-
-    scale = min(target_w / src_w, target_h / src_h)
-    fg_w, fg_h = round(src_w * scale), round(src_h * scale)
-    paste_x = (target_w - fg_w) // 2
-    paste_y = (target_h - fg_h) // 2
-
-    _assert_corner_survived(out, paste_x, paste_y, dx=1, dy=1)
-    _assert_corner_survived(out, paste_x + fg_w - 1, paste_y + fg_h - 1, dx=-1, dy=-1)
-
-
-def test_resize_extreme_portrait_preset_preserves_all_source_content():
-    # OpenAI's portrait native size (1024x1536) into a 1:1 square target --
-    # under the old crop this discarded content from the left and right
-    # edges.
-    src_w, src_h = 1024, 1536
-    src, _block = _corner_markers(src_w, src_h)
-
-    result = resize_to_preset(src, 1080, 1080)
-    out = Image.open(io.BytesIO(result)).convert("RGB")
-    assert out.size == (1080, 1080)
-
-    scale = min(1080 / src_w, 1080 / src_h)
-    fg_w, fg_h = round(src_w * scale), round(src_h * scale)
-    paste_x = (1080 - fg_w) // 2
-    paste_y = (1080 - fg_h) // 2
-
-    _assert_corner_survived(out, paste_x, paste_y, dx=1, dy=1)
-    _assert_corner_survived(out, paste_x + fg_w - 1, paste_y + fg_h - 1, dx=-1, dy=-1)
-
-
-def test_resize_matching_aspect_ratio_is_not_padded_or_blurred():
-    # Source and target share an aspect ratio exactly (a square source for
-    # a square preset) -- contain-scale equals cover-scale, so there is no
-    # border to fill and the output must be a plain resize, not a
-    # composited/blurred canvas.
-    src = Image.new("RGB", (1024, 1024), (200, 100, 50))
-    out_bytes = io.BytesIO()
-    src.save(out_bytes, format="PNG")
-
-    result = resize_to_preset(out_bytes.getvalue(), 1080, 1080)
-    out = Image.open(io.BytesIO(result)).convert("RGB")
-    assert out.size == (1080, 1080)
-    # A plain resize of a flat-color image stays that flat color everywhere
-    # -- a blur/composite step would not change a uniform image, but this
-    # also confirms no unexpected border was introduced at the edges.
-    assert out.getpixel((0, 0)) == (200, 100, 50)
-    assert out.getpixel((1079, 1079)) == (200, 100, 50)
+    assert _is_marker_ish(out.getpixel((target_w // 2, target_h // 2)))

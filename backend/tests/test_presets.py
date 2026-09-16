@@ -24,9 +24,27 @@ def test_every_preset_has_an_aspect_ratio():
 
 
 def test_aspect_ratios_are_from_supported_set():
-    supported = {"1:1", "9:16", "16:9"}
+    # Gemini's image_config.aspect_ratio accepts exactly this enum
+    # (verified against the live API docs, not assumed).
+    supported = {
+        "1:1", "3:2", "2:3", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9",
+    }
     for ratio in PRESET_TO_ASPECT_RATIO.values():
         assert ratio in supported
+
+
+def test_aspect_ratios_are_the_nearest_gemini_enum_value():
+    gemini_ratios = {
+        "1:1": 1.0, "3:2": 1.5, "2:3": 2 / 3, "3:4": 0.75, "4:3": 4 / 3,
+        "4:5": 0.8, "5:4": 1.25, "9:16": 9 / 16, "16:9": 16 / 9, "21:9": 21 / 9,
+    }
+    for key, (w, h, _label) in PLATFORM_PRESETS.items():
+        true_ratio = w / h
+        expected = min(gemini_ratios, key=lambda r: abs(gemini_ratios[r] - true_ratio))
+        assert PRESET_TO_ASPECT_RATIO[key] == expected, (
+            f"{key}: true ratio {true_ratio:.3f} is nearest to {expected}, "
+            f"but mapped to {PRESET_TO_ASPECT_RATIO[key]}"
+        )
 
 
 def test_model_for_provider():

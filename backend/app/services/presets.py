@@ -17,20 +17,26 @@ PLATFORM_PRESETS: dict[str, tuple[int, int, str]] = {
     "youtube_banner":       (2560, 1440, "YouTube Banner"),
 }
 
+# Gemini's image_config.aspect_ratio only accepts a fixed enum of 10
+# values (1:1, 3:2, 2:3, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9) -- each
+# preset below maps to whichever of those is numerically closest to its
+# true target ratio, so Gemini composes as close to the final canvas as
+# it can natively produce. Values marked exact match the preset's true
+# ratio exactly; the rest are the nearest available approximation.
 PRESET_TO_ASPECT_RATIO: dict[str, str] = {
-    "instagram_post":       "1:1",
-    "instagram_story":      "9:16",
-    "instagram_reel_cover": "9:16",
-    "facebook_story":       "9:16",
-    "tiktok_video_cover":   "9:16",
-    "facebook_post":        "16:9",
-    "twitter_post":         "16:9",
-    "linkedin_post":        "16:9",
-    "youtube_thumbnail":    "16:9",
-    "twitter_header":       "16:9",
-    "facebook_cover":       "16:9",
-    "linkedin_banner":      "16:9",
-    "youtube_banner":       "16:9",
+    "instagram_post":       "1:1",   # 1200:1200 = 1.000 -- exact
+    "instagram_story":      "9:16",  # 1080:1920 = 0.562 -- exact
+    "instagram_reel_cover": "9:16",  # 1080:1920 = 0.562 -- exact
+    "facebook_post":        "16:9",  # 1200:630  = 1.905 -- nearest (16:9=1.778)
+    "facebook_cover":       "21:9",  # 820:312   = 2.628 -- nearest (21:9=2.333)
+    "facebook_story":       "9:16",  # 1080:1920 = 0.562 -- exact
+    "twitter_post":         "16:9",  # 1200:675  = 1.778 -- exact
+    "twitter_header":       "21:9",  # 1500:500  = 3.000 -- nearest (21:9=2.333)
+    "linkedin_post":        "16:9",  # 1200:627  = 1.914 -- nearest (16:9=1.778)
+    "linkedin_banner":      "21:9",  # 1584:396  = 4.000 -- nearest (21:9=2.333)
+    "tiktok_video_cover":   "9:16",  # 1080:1920 = 0.562 -- exact
+    "youtube_thumbnail":    "16:9",  # 1280:720  = 1.778 -- exact
+    "youtube_banner":       "16:9",  # 2560:1440 = 1.778 -- exact
 }
 
 MODEL_FOR_PROVIDER: dict[str, str] = {
