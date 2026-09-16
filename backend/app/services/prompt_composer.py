@@ -81,8 +81,12 @@ PLATFORM_NOTES: dict[str, str] = {
         "are clear at small preview sizes."
     ),
     "linkedin_banner": (
-        "Ultra-wide banner. Design for horizontal scanning "
-        "— no critical content at the extreme edges (may be cropped on mobile)."
+        "Ultra-wide banner (4:1) — wider than this generator's source "
+        "canvas allows natively, so the top and bottom ~13% of the frame "
+        "on each side is trimmed after generation to reach the exact "
+        "banner ratio. Keep the logo, headline, and every important face "
+        "or line of text within the vertical-center 75% of the frame; "
+        "treat the top and bottom edges as decorative background only."
     ),
     "tiktok_video_cover": (
         "Full-screen vertical format. Place key content in the safe middle 60% "
