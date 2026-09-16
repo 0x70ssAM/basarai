@@ -17,15 +17,19 @@ test.describe('brand management regression (Clerk auth, untouched business logic
     await loginWithPassword(page, TEST_USER_EMAIL, TEST_USER_PASSWORD)
 
     await page.goto('/brands')
-    await page.getByRole('button', { name: /create brand/i }).click()
+    // Several elements share the accessible name "Create brand" (the
+    // sidebar's icon-only "+" button, the page header button, and the
+    // empty-state CTA) -- scope to the main content header button.
+    await page.locator('main').getByRole('button', { name: 'Create brand', exact: true }).first().click()
     await page.getByLabel(/brand name/i).fill(brandName)
     await page.getByRole('button', { name: /^create$/i }).click()
 
-    await expect(page.getByText(brandName)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(brandName).first()).toBeVisible({ timeout: 15_000 })
 
     // Navigate into the new brand's settings and delete it, restoring a
-    // clean slate for the next run.
-    await page.getByText(brandName).click()
+    // clean slate for the next run. Click the brand card link, not the
+    // sidebar's copy of the same name.
+    await page.getByRole('link', { name: new RegExp(brandName) }).first().click()
     await page.waitForURL(/\/[0-9a-f-]{36}/)
     await page.goto(page.url().replace(/\/[a-z0-9-]*$/, '') + '/settings')
     const deleteButton = page.getByRole('button', { name: /delete brand/i })
