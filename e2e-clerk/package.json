@@ -1,0 +1,15 @@
+{
+  "name": "basarai-e2e-clerk",
+  "private": true,
+  "type": "module",
+  "description": "Playwright E2E suite for the isolated Clerk-auth staging deployment (basarai-clerk-staging). Separate from ../e2e, which targets the Supabase-auth basarai-staging deployment and must keep passing unmodified.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "dotenv": "^17.2.3"
+  }
+}

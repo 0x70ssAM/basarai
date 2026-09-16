@@ -245,3 +245,38 @@ One branch. Code: `git checkout master`. DB: hand-written down migration (re-add
 - Replacing the hand-built login/signup UI with Clerk's prebuilt `<SignIn/>`/`<SignUp/>` (faster, but discards the current design and the upcoming design episode).
 - Cross-device magic links, social logins, MFA, organizations, Next 15 upgrade.
 - Touching `specs/*` or historical migrations.
+
+---
+
+## 7. This fork's provisioning record (feature/clerk-auth)
+
+Everything below is specific to `0x70ssAM/basarai`, branch `feature/clerk-auth`. It supplements, not replaces, sections 1-6 above (which are the original upstream plan, carried over verbatim as design reference).
+
+**Branch:** `feature/clerk-auth`, created from `master` @ `d524c68`, pushed to the fork. Never merged into `master`.
+
+**Migration renumbering:** upstream's `00015_clerk_auth.sql` was applied here as `00016_clerk_auth.sql`, since this fork already has its own `00015_add_missing_platform_presets.sql`.
+
+**Database:** the existing `basarai-staging` Supabase project (`pbfbarzscosatbwaaucv`) has real data (1 brand, 2 users, 2 generations) and its own migration's own guard (`RAISE EXCEPTION` if `profiles`/`brands` are non-empty) correctly refuses to run against it. Per this task's own explicit permission, a new, isolated Supabase project was provisioned instead:
+- Name: `basarai-clerk-staging`, ref `qvkwzfupiunupdmmeqds`, org `Basar AI` (`qldgikkuwengmovrpsjr`), region `us-east-1`.
+- All 16 migrations (`00001`-`00016`) applied via `supabase db push`, verified empty-table guard passed, `profiles.clerk_user_id`/`user_id` default, `brands` FK -> `profiles`, `on_auth_user_created` trigger absent, `platform_preset_t` includes this fork's 3 extra values, `brand-assets` storage bucket and vault helper functions present.
+- Completely separate from `basarai-staging`'s database -- no shared rows, no migration ever ran against the populated project.
+
+**Clerk:** existing application `BasarAI` (`app_3JP3FTm3oAPvq0SxYvpckZ56ZUw`), dev instance `ins_3JP3FTsarXwDQaDoYJo8Teosrbj` (already linked via `clerk link`, not newly created). Verified/applied config:
+- Email + password + email-link sign-in already enabled; session claim `{"email": "{{user.primary_email_address}}"}` already set; bot protection (smart captcha) already on; `email_link_require_same_client: true` (same-device magic links) already on.
+- `auth_password.device_trust.enabled` was `true` -- patched to `false` via `clerk config patch` (dry-run verified first) to match this task's "Device Trust OFF" requirement.
+- Session lifetime: 60s (pre-existing instance setting) -- short-lived tokens by design, `getToken()` refreshes client-side.
+- `CLERK_ISSUER=https://renewing-hornet-8240.clerk.accounts.dev` (this instance's Frontend API host, decoded from the publishable key).
+- Same dev-instance keys are used for both local dev and this staging deployment (no separate prod instance configured -- consistent with the dev-instance-only scope of this task).
+
+**Render:** new Web Service `basarai-clerk-staging` (`srv-dal65lqd0e5s738mjdag`), Docker runtime, `./Dockerfile`, free plan, region `oregon`, branch `feature/clerk-auth`, auto-deploy on push. URL: `https://basarai-clerk-staging.onrender.com` -- entirely separate from `basarai-staging.onrender.com` (`srv-dakk4doae00c73bnmqp0`), which was left untouched throughout.
+
+**Env vars set on `basarai-clerk-staging`** (values live only in Render, `sync: false` in `render.yaml`):
+`PORT`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_SITE_URL`, `SUPABASE_URL`, `STORAGE_BUCKET`, `CORS_ORIGINS`, `CLERK_ISSUER`, `CLERK_AUTHORIZED_PARTIES`, `SUPABASE_SECRET_KEY`, `CLERK_SECRET_KEY`, `ADMIN_EMAILS` (reused from `basarai-staging`'s real configured admin email).
+
+**Test users** (Clerk Backend API, `basarai-clerk-staging` dev instance only, pre-verified email + password -- no real inbox needed for password-flow tests):
+- `e2e-clerk-test@example.com` -- ordinary, non-admin.
+- `hossamibraheem2014@gmail.com` -- matches `ADMIN_EMAILS`, used to verify admin authorization end-to-end.
+
+**E2E tests:** `e2e-clerk/` (new, separate from `e2e/`, which continues to target `basarai-staging` unmodified). Covers auth-redirect safety (no `0.0.0.0`/`localhost` leakage), password login/logout, backend JWT verification, admin authorization, and brand-management regression on the fresh database.
+
+**Rollback:** delete the Render service (`basarai-clerk-staging`) and the Supabase project (`qvkwzfupiunupdmmeqds`) if no longer needed; delete the `feature/clerk-auth` branch; `master` and `basarai-staging` were never touched by any step of this work.
