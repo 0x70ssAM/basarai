@@ -27,9 +27,10 @@ test.describe('brand management regression (Clerk auth, untouched business logic
     await expect(page.getByText(brandName).first()).toBeVisible({ timeout: 15_000 })
 
     // Navigate into the new brand's settings and delete it, restoring a
-    // clean slate for the next run. Click the brand card link, not the
-    // sidebar's copy of the same name.
-    await page.getByRole('link', { name: new RegExp(brandName) }).first().click()
+    // clean slate for the next run. The brand name also appears as the
+    // sidebar's brand-dot link (off-screen below md, and not the card
+    // we actually want) -- scope to the main content brand card.
+    await page.locator('main').getByRole('link', { name: new RegExp(brandName) }).first().click()
     await page.waitForURL(/\/[0-9a-f-]{36}/)
     await page.goto(page.url().replace(/\/[a-z0-9-]*$/, '') + '/settings')
     const deleteButton = page.getByRole('button', { name: /delete brand/i })

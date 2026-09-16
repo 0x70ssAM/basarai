@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { TEST_USER_EMAIL, TEST_USER_PASSWORD, loginWithPassword } from './fixtures'
+import { TEST_USER_EMAIL, TEST_USER_PASSWORD, loginWithPassword, openMobileMenuIfNeeded } from './fixtures'
 
 const BASE_URL = process.env.BASE_URL ?? 'https://basarai-clerk-staging.onrender.com'
 
@@ -17,7 +17,12 @@ test.describe('Clerk password login/logout', () => {
     await page.getByLabel('Email').fill(TEST_USER_EMAIL)
     await page.getByLabel('Password', { exact: true }).fill('definitely-wrong-password')
     await page.getByRole('button', { name: 'Log in' }).click()
-    await expect(page.locator('text=/.+/').first()).toBeVisible()
+    // The destructive-styled error banner in login/page.tsx -- a generic
+    // "any text visible" locator is fragile (it can resolve to the
+    // desktop-only hero heading, which is legitimately CSS-hidden on
+    // mobile, producing a false failure unrelated to whether the actual
+    // error rendered).
+    await expect(page.locator('.text-destructive').first()).toBeVisible()
     expect(page.url()).toContain('/login')
   })
 
@@ -29,6 +34,7 @@ test.describe('Clerk password login/logout', () => {
 
   test('logout via the sidebar returns to /login and re-protects /brands', async ({ page }) => {
     await loginWithPassword(page, TEST_USER_EMAIL, TEST_USER_PASSWORD)
+    await openMobileMenuIfNeeded(page)
     await page.getByRole('button', { name: 'Log out' }).click()
     await page.waitForURL('**/login')
 

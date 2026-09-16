@@ -15,6 +15,20 @@ export async function loginWithPassword(page: Page, email: string, password: str
 }
 
 /**
+ * The sidebar (and everything only reachable through it -- Log out,
+ * brand switcher) is translated off-screen below the md breakpoint
+ * (components/layout/app-sidebar.tsx: max-md:-translate-x-full) and
+ * only slides in after the header's "Open menu" hamburger is clicked.
+ * A no-op on desktop viewports, where that button doesn't render.
+ */
+export async function openMobileMenuIfNeeded(page: Page) {
+  const menuButton = page.getByRole('button', { name: 'Open menu' })
+  if (await menuButton.isVisible().catch(() => false)) {
+    await menuButton.click()
+  }
+}
+
+/**
  * Reads a live Clerk session token straight from the client SDK, exactly
  * the way frontend/lib/api.ts does it (window.Clerk.session.getToken()).
  * There is no cookie to parse for Clerk the way there was for the
