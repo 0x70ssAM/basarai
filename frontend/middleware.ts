@@ -18,22 +18,29 @@ function isNextControlFlowSignal(err: unknown): boolean {
   )
 }
 
-export default clerkMiddleware(async (auth, req) => {
+const withClerk = clerkMiddleware(async (auth, req) => {
+  const { userId } = await auth()
+  if (userId && isAuthPage(req)) return NextResponse.redirect(new URL('/brands', req.url))
+  if (!isPublic(req)) await auth.protect()
+})
+
+export default async function middleware(
+  req: Parameters<typeof withClerk>[0],
+  event: Parameters<typeof withClerk>[1],
+) {
   try {
-    const { userId } = await auth()
-    if (userId && isAuthPage(req)) return NextResponse.redirect(new URL('/brands', req.url))
-    if (!isPublic(req)) await auth.protect()
+    // A malformed-but-JWT-shaped Authorization header makes clerkMiddleware
+    // itself throw -- before our handler callback above ever runs -- so a
+    // try/catch inside that callback cannot see it (confirmed live: that
+    // approach did not stop the 500). Wrapping the whole exported function
+    // is the only place that can actually catch it.
+    return await withClerk(req, event)
   } catch (err) {
     if (isNextControlFlowSignal(err)) throw err
-    // A malformed-but-JWT-shaped Authorization header can make Clerk's own
-    // auth() throw instead of resolving to "unauthenticated" (observed
-    // live: a crafted 3-segment Bearer token returned a bare Next.js 500
-    // instead of a clean redirect -- confirmed no stack trace/secret was
-    // exposed, but the status/behavior was wrong). Treat any unexpected
-    // auth-resolution failure the same as "not signed in".
     if (!isPublic(req)) return NextResponse.redirect(new URL('/login', req.url))
+    return NextResponse.next()
   }
-})
+}
 
 export const config = {
   matcher: [
